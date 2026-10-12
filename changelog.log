@@ -30,3 +30,13 @@ Actions and status:
 - Authorization URL was provided directly to the user in this conversation. No message was sent to a third party.
 - User still needs to approve access in Google and return the redirected URL/code. No OAuth token exists yet, and no calendar data or events have been accessed or changed.
 - Implementation and initial changelog were committed as `820fb1c041572606cfafee0eacc35a8931d8b5a5` (`feat(google-workspace): support service-scoped OAuth consent`) and pushed to `origin/nella-custom`.
+
+2026-10-12 13:12:17 UTC — Google Calendar OAuth completed and verified
+
+Actions and verification:
+- Exchanged the user's Google OAuth redirect URL using the saved Calendar-only PKCE session.
+- `setup.py --check` reported `AUTHENTICATED`.
+- `setup.py --check-live` reported `LIVE_CHECK_OK`; the real Calendar API list call succeeded.
+- Independently verified both granted and requested token scopes are exactly `https://www.googleapis.com/auth/calendar`; the pending OAuth state file was removed after exchange. Token contents are private and never recorded here or committed.
+- No events were created, edited, or deleted; no guests or invitations were involved. The authorization itself grants full Calendar read/write capability, while the user's operational guardrails remain in force.
+- No communication was sent to any third party.
