@@ -21,3 +21,12 @@ Relevant state and guardrails:
 - The client secret was copied to `/home/citronella/.hermes/google_client_secret.json`; its contents are intentionally excluded from version control.
 - No OAuth authorization URL/token exchange has completed yet. No Calendar data or events have been accessed or changed.
 - Calendar OAuth uses the full Calendar read/write scope. User policy remains: do not delete calendar events without explicit permission; do not create events with guests or send invitations. The scope itself technically permits more than these operating rules.
+
+2026-10-12 12:57:38 UTC — Calendar OAuth authorization handoff prepared
+
+Actions and status:
+- Ran the active installed setup script with `--auth-url --services calendar` using the Hermes-managed Python environment.
+- Verified the generated OAuth request and profile-scoped pending session contain only `https://www.googleapis.com/auth/calendar`; PKCE/state values remain private and are not recorded here.
+- Authorization URL was provided directly to the user in this conversation. No message was sent to a third party.
+- User still needs to approve access in Google and return the redirected URL/code. No OAuth token exists yet, and no calendar data or events have been accessed or changed.
+- Implementation and initial changelog were committed as `820fb1c041572606cfafee0eacc35a8931d8b5a5` (`feat(google-workspace): support service-scoped OAuth consent`) and pushed to `origin/nella-custom`.
