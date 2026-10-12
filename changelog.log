@@ -1,0 +1,23 @@
+Hermes Local Change Log
+=======================
+
+2026-10-12 12:55:32 UTC — Google Workspace OAuth service-scope selection
+
+Actions:
+- Added `--services` support to the Google Workspace setup script. It maps selected services to their OAuth scopes; `--services calendar` requests only `https://www.googleapis.com/auth/calendar`.
+- Preserved the prior all-services scope selection as the default for backward compatibility. The chosen scopes are saved with the pending OAuth session and carried through code exchange and token validation/refresh.
+- Updated the Google Workspace skill instructions to match the actual CLI behavior, recommend enabling only the needed APIs, and show Calendar-only setup.
+- Added regression coverage for Calendar-only scopes, invalid service names, legacy all-scope behavior, authorization request/pending scope consistency, callback scope handling, token completeness checks, and CLI argument forwarding.
+- Copied the updated tracked setup script and skill instructions to the active installed skill at `/home/citronella/.hermes/skills/productivity/google-workspace/` and verified the copies match.
+- Added this changelog so future contexts can recover the work and its status.
+
+Verification:
+- RED: the new tests initially failed on the missing service-selection API and full-workspace scope assumptions.
+- GREEN: `scripts/run_tests.sh tests/skills/test_google_workspace_setup.py tests/skills/test_google_workspace_api.py -q` — 17 passed, 0 failed.
+- Ruff checks passed for the modified Python script and tests; `git diff --check` passed.
+- The runner repeatedly reported optional `cua-driver` unavailable because `libXi.so.6` is absent; this did not affect the selected tests.
+
+Relevant state and guardrails:
+- The client secret was copied to `/home/citronella/.hermes/google_client_secret.json`; its contents are intentionally excluded from version control.
+- No OAuth authorization URL/token exchange has completed yet. No Calendar data or events have been accessed or changed.
+- Calendar OAuth uses the full Calendar read/write scope. User policy remains: do not delete calendar events without explicit permission; do not create events with guests or send invitations. The scope itself technically permits more than these operating rules.
