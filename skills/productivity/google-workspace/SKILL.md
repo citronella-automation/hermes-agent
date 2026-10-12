@@ -214,6 +214,11 @@ $GAPI gmail modify MESSAGE_ID --remove-labels UNREAD
 $GAPI calendar list
 $GAPI calendar list --start 2026-03-01T00:00:00Z --end 2026-03-07T23:59:59Z
 
+# Fetch one local date from the primary calendar (Theodore for this user).
+# Defaults to Asia/Singapore; override with any IANA timezone when needed.
+$HERMES_PYTHON ${HERMES_HOME:-$HOME/.hermes}/skills/productivity/google-workspace/scripts/calendar_day.py 2026-10-12
+$HERMES_PYTHON ${HERMES_HOME:-$HOME/.hermes}/skills/productivity/google-workspace/scripts/calendar_day.py 2026-10-12 --timezone UTC
+
 # Create event (ISO 8601 with timezone required)
 $GAPI calendar create --summary "Team Standup" --start 2026-03-01T10:00:00-06:00 --end 2026-03-01T10:30:00-06:00
 $GAPI calendar create --summary "Lunch" --start 2026-03-01T12:00:00Z --end 2026-03-01T13:00:00Z --location "Cafe"

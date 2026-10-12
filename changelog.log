@@ -40,3 +40,26 @@ Actions and verification:
 - Independently verified both granted and requested token scopes are exactly `https://www.googleapis.com/auth/calendar`; the pending OAuth state file was removed after exchange. Token contents are private and never recorded here or committed.
 - No events were created, edited, or deleted; no guests or invitations were involved. The authorization itself grants full Calendar read/write capability, while the user's operational guardrails remain in force.
 - No communication was sent to any third party.
+
+2026-10-12 13:30:20 UTC — Primary-calendar date utility and event-label color handling
+
+Actions:
+- Corrected the previous color interpretation: Google Calendar events expose modern `eventLabelId` values separately from legacy `colorId`. The earlier answer looked only at legacy IDs and calendar palette, which was not the event's visible label color.
+- Verified today's primary-calendar events through `eventLabelId` plus `Calendar.labelProperties.eventLabels`; their order is Cobalt, Pistachio, Birch, Cobalt, Grape. Known label colors map to `#4285f4`, `#7cb342`, `#a79b8e`, and `#8e24aa` respectively.
+- Added `skills/productivity/google-workspace/scripts/calendar_day.py`: fetches one ISO date from primary calendar `primary` (Theodore), defaults to Asia/Singapore, supports an explicit IANA timezone, uses a half-open local-day interval, follows all event pages, excludes cancelled/declined entries, and returns event-label/legacy/calendar-default color data.
+- Updated the Google Workspace skill with usage examples and synchronized the new script and instructions into the active installed skill; verified the copies match.
+- Added unit tests for timezone windows, label and legacy color resolution, primary-only querying, pagination, and calendar-default color fallback.
+
+Verification:
+- `scripts/run_tests.sh tests/skills/test_google_calendar_day.py tests/skills/test_google_workspace_api.py tests/skills/test_google_workspace_setup.py -q` — 26 passed, 0 failed.
+- Ruff and `git diff --check` passed.
+- Live read-only run of the utility for `2026-10-12` returned the expected five events and exact user-provided color order. No calendar entries were created, edited, or deleted.
+
+2026-10-12 13:32:40 UTC — Complete user-provided Calendar swatch names added
+
+Actions and verification:
+- Added the complete 24-entry name-to-hex palette supplied by the user to `calendar_day.py`; unknown custom colors still retain their hex value without being assigned a guessed name.
+- RED: all 20 newly added tests for previously unsupported swatch names failed. GREEN: after adding the mapping, the Calendar utility, Google API helper, and OAuth setup tests passed — 47 passed, 0 failed.
+- Ruff passed for the utility and tests. The test runner's optional `cua-driver` install continues to be unavailable due to missing system library `libXi.so.6`; this does not affect these tests.
+- Copied the updated utility into the active installed skill and ran it against primary calendar `Theodore` for 2026-10-12. Live event-label resolution returned exactly `Cobalt, Pistachio, Birch, Cobalt, Grape`.
+- Read-only verification only; no Calendar entries were modified.
