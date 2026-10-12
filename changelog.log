@@ -63,3 +63,8 @@ Actions and verification:
 - Ruff passed for the utility and tests. The test runner's optional `cua-driver` install continues to be unavailable due to missing system library `libXi.so.6`; this does not affect these tests.
 - Copied the updated utility into the active installed skill and ran it against primary calendar `Theodore` for 2026-10-12. Live event-label resolution returned exactly `Cobalt, Pistachio, Birch, Cobalt, Grape`.
 - Read-only verification only; no Calendar entries were modified.
+
+2026-10-12 13:33:37 UTC — Calendar utility changes committed and pushed
+
+- Commit `89fdc375f1f77e1c5811003d1d5c2bd45a2362a8` (`feat(calendar): add date-scoped primary calendar utility`) was pushed to `origin/nella-custom`.
+- The commit includes the utility, 24-color label map, tests, skill usage documentation, and the preceding changelog entry. Active installed script and docs match the tracked versions.
