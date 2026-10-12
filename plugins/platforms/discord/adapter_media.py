@@ -23,6 +23,24 @@ _DISCORD_DEFAULT_UPLOAD_LIMIT_BYTES = 20 * 1024 * 1024
 
 
 class DiscordMediaMixin:
+    def _route_assistant_output(
+        self, chat_id: str, reply_to: Optional[str] = None,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> tuple[str, Optional[str], Optional[dict[str, Any]]]:
+        """Apply the configured Discord output sink to media and prompt send paths."""
+        route = getattr(self, "_assistant_output_chat_id", None)
+        route_anchor = str((metadata or {}).get("parent_chat_id") or chat_id)
+        routed = str(route(route_anchor)) if callable(route) else route_anchor
+        policy = getattr(getattr(self, "_assistant_monitor", None), "policy", None)
+        enabled = bool(policy and policy.input_channel_id and policy.output_channel_id)
+        if routed == route_anchor and not enabled:
+            return str(chat_id), reply_to, metadata
+        metadata = dict(metadata or {})
+        if reply_to:
+            metadata.setdefault("reply_to_message_id", reply_to)
+        metadata.pop("thread_id", None)
+        return routed, None, metadata
+
     @staticmethod
     def _discord_upload_limit_bytes(channel: Any) -> int:
         """Return the effective Discord attachment size limit for *channel*.
@@ -89,6 +107,7 @@ class DiscordMediaMixin:
         """
         from plugins.platforms.discord.adapter import _prompt_target_id, discord
 
+        chat_id, _reply_to, metadata = self._route_assistant_output(chat_id, None, metadata)
         if not self._client:
             return SendResult(success=False, error="Not connected")
         if not os.path.isfile(file_path):
@@ -137,6 +156,7 @@ class DiscordMediaMixin:
         inline (bare links don't render); on chunk failure the remainder uses the per-image loop."""
         from plugins.platforms.discord.adapter import _prompt_target_id, _image_ext_from_content_type, _read_url_image_with_redirect_guard, is_safe_url
 
+        chat_id, _reply_to, metadata = self._route_assistant_output(chat_id, None, metadata)
         if not self._client:
             return SendResult(success=False, error="Not connected")
         if not images:
@@ -282,6 +302,7 @@ class DiscordMediaMixin:
         """Send audio as a Discord file attachment."""
         from plugins.platforms.discord.adapter import _prompt_target_id, discord
 
+        chat_id, reply_to, metadata = self._route_assistant_output(chat_id, reply_to, metadata)
         try:
             import io
             channel = await self._resolve_channel(_prompt_target_id(chat_id, metadata))
@@ -376,6 +397,7 @@ class DiscordMediaMixin:
         ``fallback(metadata)`` is the base-adapter URL send (``error_metadata`` after download failure)."""
         from plugins.platforms.discord.adapter import _prompt_target_id, _read_url_image_with_redirect_guard, discord, is_safe_url
 
+        chat_id, _reply_to, metadata = self._route_assistant_output(chat_id, None, metadata)
         if not self._client:
             return SendResult(success=False, error="Not connected")
         if not is_safe_url(url):

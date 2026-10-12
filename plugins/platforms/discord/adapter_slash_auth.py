@@ -34,6 +34,10 @@ class DiscordSlashAuthMixin:
         # Channel scope mirrors on_message; DMs use on_message's DM lockdown path instead.
         if not in_dm:
             chan_id_raw = getattr(interaction, "channel_id", None) or getattr(chan_obj, "id", None)
+            policy = getattr(getattr(self, "_assistant_monitor", None), "policy", None)
+            if policy and policy.input_channel_id and policy.output_channel_id:
+                if str(chan_id_raw or "") != policy.input_channel_id:
+                    return (False, "channel is not assistant_input_channel")
             if chan_id_raw is not None:
                 channel_ids.add(str(chan_id_raw))
                 # Threads: also test the parent channel, as on_message does.

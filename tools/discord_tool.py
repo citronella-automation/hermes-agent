@@ -599,6 +599,37 @@ def _run_discord_action(action: str, valid_actions: dict[str, Any], tool_label: 
         return tool_error(
             f"Action '{action}' is disabled by config (discord.server_actions). "
             f"Allowed: {', '.join(allowlist) if allowlist else '<none>'}")
+    # Read at call time via the active profile scope; never cache another
+    # profile's output policy or let a previously exposed schema bypass it.
+    if action in {"create_thread", "pin_message", "unpin_message", "delete_message"}:
+        try:
+            from hermes_cli.config import load_config
+            from gateway.config import Platform, PlatformConfig
+            from gateway.config_loader import bridge_platform_shared_keys, merge_platform_sections
+            cfg = load_config()
+            gateway_section = cfg.get("gateway")
+            gateway_platforms = (gateway_section.get("platforms")
+                                 if isinstance(gateway_section, dict) else None)
+            gw_data = {}
+            platforms = merge_platform_sections(cfg, gateway_section, gw_data)
+            # Use the gateway's pure YAML merge/bridge: root discord keys win
+            # over nested direct keys, but authored platforms.discord.extra wins
+            # conflicts. Do not run adapter hooks that mutate process-global env.
+            bridge_platform_shared_keys(
+                cfg, gateway_platforms, gw_data, platforms, [Platform.DISCORD])
+            extra = PlatformConfig.from_dict(platforms.get("discord") or {}).extra
+        except Exception as exc:
+            return tool_error(f"Cannot verify Discord routing policy: {exc}")
+        if (str(extra.get("assistant_input_channel") or "").strip()
+                and str(extra.get("assistant_output_channel") or "").strip()):
+            if action == "create_thread":
+                return tool_error("Thread creation is disabled while Discord assistant routing is enabled.")
+            # Message IDs belong to their original channel: do not redirect a
+            # pin/delete to the sink using an unrelated source message ID.
+            sink = str(extra["assistant_output_channel"]).strip()
+            if str(params.get("channel_id") or "").strip() != sink:
+                return tool_error(
+                    f"Action '{action}' is disabled outside the Discord assistant routing output channel.")
     kwargs = {k: params.get(k, v) for k, v in _HANDLER_DEFAULTS.items()}
     missing = [p for p in _REQUIRED_PARAMS.get(action, []) if not kwargs.get(p)]
     if missing:

@@ -299,6 +299,11 @@ try:
 except ImportError:
     from ffmpeg_utils import resolve_ffmpeg_executable
 
+try:
+    from .assistant_channels import DiscordAssistantChannelPolicy, DiscordAssistantMonitor
+except ImportError:
+    from assistant_channels import DiscordAssistantChannelPolicy, DiscordAssistantMonitor
+
 from gateway.config import Platform, PlatformConfig, discord_channel_id_from_link
 
 from gateway.platforms.helpers import (
@@ -1293,6 +1298,11 @@ class DiscordAdapter(DiscordMediaMixin, DiscordThreadTitlesMixin, DiscordVoiceIn
         super().__init__(config, Platform.DISCORD)
         self._client: Optional[commands.Bot] = None
         self._ready_event = asyncio.Event()
+        self._assistant_monitor = DiscordAssistantMonitor(DiscordAssistantChannelPolicy(
+            input_channel_id=str(self.config.extra.get("assistant_input_channel", "") or ""),
+            context_channel_ids=self.config.extra.get("assistant_context_channels", "") or "",
+            output_channel_id=str(self.config.extra.get("assistant_output_channel", "") or ""),
+        ))
         self._allowed_user_ids: set = set()  # For button approval authorization
         self._username_resolved_ids: set = set()  # IDs resolved from username entries (gateway authz union)
         self._allowed_role_ids: set = set()  # For DISCORD_ALLOWED_ROLES filtering
@@ -1801,11 +1811,44 @@ class DiscordAdapter(DiscordMediaMixin, DiscordThreadTitlesMixin, DiscordVoiceIn
                 await asyncio.wait_for(self._ready_event.wait(), timeout=30.0)
             except TimeoutError:
                 pass
+        mode = self._observe_assistant_message(message)
+        if mode == "context":
+            return True
+        if mode == "ignore":
+            return False
         admitted, role_authorized = self._discord_message_admission(message, claim=True)
         if not admitted:
             return False
         self._record_bot_tag_debounce(message)
         return await self._handle_message(message, role_authorized=role_authorized)
+
+    def _observe_assistant_message(self, message: Any) -> Optional[str]:
+        monitor = getattr(self, "_assistant_monitor", None)
+        if monitor and monitor.policy.input_channel_id and monitor.policy.output_channel_id and not isinstance(message.channel, discord.DMChannel):
+            channel = getattr(message, "channel", None)
+            channel_id = str(getattr(channel, "id", "") or "")
+            author = getattr(message, "author", None)
+            text = str(getattr(message, "content", "") or "")
+            attachments = getattr(message, "attachments", None) or ()
+            if attachments:
+                names = ", ".join(str(getattr(item, "filename", "attachment")) for item in attachments)
+                text = f"{text}\n[attachments: {names}]" if text else f"[attachments: {names}]"
+            mode = monitor.observe(
+                channel_id=channel_id,
+                channel_name=str(getattr(channel, "name", channel_id)),
+                author_id=str(getattr(author, "id", "") or ""),
+                own_bot_id=str(getattr(getattr(self._client, "user", None), "id", "") or ""),
+                author_name=str(getattr(author, "display_name", getattr(author, "name", "unknown"))),
+                text=text,
+                timestamp=getattr(message, "created_at", None),
+            )
+            return mode
+        return None
+
+    def _assistant_output_chat_id(self, chat_id: str) -> str:
+        """Route assistant replies addressed to the direct-input channel to its configured sink."""
+        monitor = getattr(self, "_assistant_monitor", None)
+        return monitor.output_target(str(chat_id)) if monitor else str(chat_id)
 
     # --- gateway_platform_event fire-sites ---
 
@@ -2605,6 +2648,9 @@ class DiscordAdapter(DiscordMediaMixin, DiscordThreadTitlesMixin, DiscordVoiceIn
 
     async def _dispatch_recovered_message(self, message: Any) -> bool:
         """Run one recovered message through the live Discord ingress gates."""
+        mode = self._observe_assistant_message(message)
+        if mode in {"context", "ignore"}:
+            return False
         if not isinstance(message.channel, discord.DMChannel):
             parent_id = self._get_parent_channel_id(message.channel)
             channel_keys = self._discord_channel_keys(message, parent_id)
@@ -3204,6 +3250,11 @@ class DiscordAdapter(DiscordMediaMixin, DiscordThreadTitlesMixin, DiscordVoiceIn
 
     async def _add_reaction(self, message: Any, emoji: str) -> bool:
         """Add an emoji reaction to a Discord message."""
+        policy = getattr(getattr(self, "_assistant_monitor", None), "policy", None)
+        if policy and policy.input_channel_id and policy.output_channel_id:
+            channel_id = str(getattr(getattr(message, "channel", None), "id", ""))
+            if channel_id != policy.output_channel_id:
+                return False
         if not message or not hasattr(message, "add_reaction"):
             return False
         try:
@@ -3297,6 +3348,7 @@ class DiscordAdapter(DiscordMediaMixin, DiscordThreadTitlesMixin, DiscordVoiceIn
     ) -> SendResult:
         """Send a message to a Discord channel or thread (metadata thread_id wins over
         chat_id; forum channels auto-create a thread post since they reject direct sends)."""
+        chat_id, reply_to, metadata = self._route_assistant_output(chat_id, reply_to, metadata)
         if not self._client:
             # Dead transport: classify as send_path_degraded so the delivery ledger's reconnect
             # sweep can replay this; a generic "Not connected" error would strand the output.
@@ -3389,6 +3441,9 @@ class DiscordAdapter(DiscordMediaMixin, DiscordThreadTitlesMixin, DiscordVoiceIn
     async def _send_to_forum(self, forum_channel: Any, content: str) -> SendResult:
         """Create a forum thread post with the message as starter (forum channels reject direct
         sends; name from the first line). Chunk failures land in ``raw_response['warnings']``."""
+        policy = self._assistant_monitor.policy
+        if policy.input_channel_id and policy.output_channel_id:
+            return SendResult(success=False, error="Assistant output channel must support direct messages, not forum posts.")
         formatted = self.format_message(content)
         chunks = self._cap_split_chunks(self.truncate_message(formatted, self.MAX_MESSAGE_LENGTH))
         thread_name = _derive_forum_thread_name(content)
@@ -3419,6 +3474,9 @@ class DiscordAdapter(DiscordMediaMixin, DiscordThreadTitlesMixin, DiscordVoiceIn
         file: Any = None, files: Optional[list] = None,
     ) -> SendResult:
         """Create a forum thread whose starter message carries file attachments."""
+        policy = self._assistant_monitor.policy
+        if policy.input_channel_id and policy.output_channel_id:
+            return SendResult(success=False, error="Assistant output channel must support direct messages, not forum posts.")
         if not thread_name:
             hint = content or ""
             if not hint.strip():
@@ -3480,6 +3538,7 @@ class DiscordAdapter(DiscordMediaMixin, DiscordThreadTitlesMixin, DiscordVoiceIn
         splitting mid-stream would move the edit target to a continuation and the next accumulated-token
         tick would re-split, looping forever (the Telegram #48648 lesson).
         """
+        chat_id, _reply_to, metadata = self._route_assistant_output(chat_id, None, metadata)
         if not self._client:
             return SendResult(success=False, error="Not connected")
         try:
@@ -3623,6 +3682,9 @@ class DiscordAdapter(DiscordMediaMixin, DiscordThreadTitlesMixin, DiscordVoiceIn
 
     async def play_tts(self, chat_id: str, audio_path: str, **kwargs) -> SendResult:
         """Play auto-TTS audio: in the guild's VC if joined, else as a file attachment."""
+        policy = self._assistant_monitor.policy
+        if policy.input_channel_id and policy.output_channel_id:
+            return await self.send_voice(chat_id=policy.output_channel_id, audio_path=audio_path, **kwargs)
         for gid, text_ch_id in self._voice_text_channels.items():
             if str(text_ch_id) == str(chat_id) and self.is_in_voice_channel(gid):
                 logger.info("[%s] Playing TTS in voice channel (guild=%d)", self.name, gid)
@@ -4027,6 +4089,10 @@ class DiscordAdapter(DiscordMediaMixin, DiscordThreadTitlesMixin, DiscordVoiceIn
             except Exception:
                 pass
         if text_ch_id and self._client:
+            policy = self._assistant_monitor.policy
+            if policy.input_channel_id and policy.output_channel_id:
+                await self.send(str(text_ch_id), t("platform.discord.voice.left_inactivity"))
+                return
             ch = self._client.get_channel(text_ch_id)
             if ch:
                 try:
@@ -4252,6 +4318,16 @@ class DiscordAdapter(DiscordMediaMixin, DiscordThreadTitlesMixin, DiscordVoiceIn
             return True
         return await self._reject_slash(interaction, command_text, reason=reason or "unauthorized")
 
+    async def _send_slash_notice(self, interaction: Any, content: str) -> None:
+        """Send command notices through the output sink when configured."""
+        policy = self._assistant_monitor.policy
+        if policy.input_channel_id and policy.output_channel_id:
+            if not interaction.response.is_done():
+                await interaction.response.defer(ephemeral=True)
+            await self.send(policy.output_channel_id, content)
+        else:
+            await interaction.response.send_message(content, ephemeral=True)
+
     async def _reject_slash(
         self, interaction: discord.Interaction, command_text: str, *, reason: str,
     ) -> bool:
@@ -4274,9 +4350,7 @@ class DiscordAdapter(DiscordMediaMixin, DiscordThreadTitlesMixin, DiscordVoiceIn
             user_name, user_id, chan_id, guild_id, command_text, reason,
         )
         try:
-            await interaction.response.send_message(
-                _unauthorized(), ephemeral=True,
-            )
+            await self._send_slash_notice(interaction, _unauthorized())
         except Exception as e:
             # Interaction may already be responded to (caller deferred, Discord retry).
             logger.debug("[Discord] Could not send unauthorized ephemeral: %s", e)
@@ -4383,6 +4457,7 @@ class DiscordAdapter(DiscordMediaMixin, DiscordThreadTitlesMixin, DiscordVoiceIn
     async def send_typing(self, chat_id: str, metadata=None) -> None:
         """Start a persistent typing loop (POST typing every 12s; indicator lasts ~10s).
         TYPING_START is unreliable for bots in DMs; 429 sleeps ``retry_after``; CancelledError ends it."""
+        chat_id, _reply_to, metadata = self._route_assistant_output(chat_id, None, metadata)
         if not self._client:
             return
         if chat_id in self._typing_tasks:
@@ -4419,6 +4494,7 @@ class DiscordAdapter(DiscordMediaMixin, DiscordThreadTitlesMixin, DiscordVoiceIn
 
     async def stop_typing(self, chat_id: str) -> None:
         """Stop the persistent typing indicator for a channel."""
+        chat_id = self._assistant_output_chat_id(chat_id)
         task = self._typing_tasks.pop(chat_id, None)
         if task:
             task.cancel()
@@ -4571,14 +4647,23 @@ class DiscordAdapter(DiscordMediaMixin, DiscordThreadTitlesMixin, DiscordVoiceIn
         await self.handle_message(event)
         if not deferred_response:
             return
+        policy = self._assistant_monitor.policy
+        routed = bool(policy.input_channel_id and policy.output_channel_id)
         try:
             if followup_msg:
                 # Native commands pass a catalog key; plugin callers may still pass literal text.
-                await interaction.edit_original_response(content=t(followup_msg))
-            else:
-                await interaction.delete_original_response()
+                if routed:
+                    await self.send(policy.output_channel_id, t(followup_msg))
+                else:
+                    await interaction.edit_original_response(content=t(followup_msg))
         except Exception as e:
-            logger.debug("Discord interaction cleanup failed: %s", e)
+            logger.debug("Discord interaction followup failed: %s", e)
+        finally:
+            if routed or not followup_msg:
+                try:
+                    await interaction.delete_original_response()
+                except Exception as e:
+                    logger.debug("Discord interaction cleanup failed: %s", e)
 
     def _slash_proxy(self, name: str, args: tuple, template: str, followup: Optional[str], *,
                      strip: bool = True, prefix: str = "slash_"):
@@ -4784,8 +4869,8 @@ class DiscordAdapter(DiscordMediaMixin, DiscordThreadTitlesMixin, DiscordVoiceIn
                     return
                 entry = self._skill_lookup.get(name)
                 if not entry:
-                    await interaction.response.send_message(
-                        t("platform.discord.command.skill.unknown", name=name), ephemeral=True)
+                    await self._send_slash_notice(
+                        interaction, t("platform.discord.command.skill.unknown", name=name))
                     return
                 _desc, cmd_key = entry
                 await self._run_simple_slash(interaction, f"{cmd_key} {args}".strip())
@@ -4912,7 +4997,10 @@ class DiscordAdapter(DiscordMediaMixin, DiscordThreadTitlesMixin, DiscordVoiceIn
         )
         if not result.get("success"):
             error = result.get("error") or t("platform.discord.command.thread.error_unknown")
-            if deferred_response:
+            policy = self._assistant_monitor.policy
+            if policy.input_channel_id and policy.output_channel_id:
+                await self.send(policy.output_channel_id, t("platform.discord.command.thread.failed", error=error))
+            elif deferred_response:
                 await interaction.followup.send(t("platform.discord.command.thread.failed", error=error), ephemeral=True)
             return
         thread_id = result.get("thread_id")
@@ -5170,7 +5258,11 @@ class DiscordAdapter(DiscordMediaMixin, DiscordThreadTitlesMixin, DiscordVoiceIn
         raw = self.config.extra.get("free_response_channels")
         if raw is None:
             raw = self._gate_env("DISCORD_FREE_RESPONSE_CHANNELS")
-        return self._gate_csv_set(raw)
+        channels = self._gate_csv_set(raw)
+        policy = getattr(getattr(self, "_assistant_monitor", None), "policy", None)
+        if policy and policy.input_channel_id and policy.output_channel_id:
+            channels.add(policy.input_channel_id)
+        return channels
 
     def _raw_mentioned_user_ids(self, message: Any) -> set:
         """Extract user-mention IDs (``<@ID>`` and legacy ``<@!ID>``) from raw content,
@@ -5449,6 +5541,9 @@ class DiscordAdapter(DiscordMediaMixin, DiscordThreadTitlesMixin, DiscordVoiceIn
         auto_archive_duration: int = 1440,
     ) -> dict[str, Any]:
         """Create a thread in the current channel; falls back to seed message + create_thread on rejection (e.g. permissions)."""
+        policy = self._assistant_monitor.policy
+        if policy.input_channel_id and policy.output_channel_id:
+            return {"error": "Thread creation is disabled while assistant channel routing is enabled."}
         name = (name or "").strip()
         if not name:
             return {"error": t("platform.discord.command.thread.error_name_required")}
@@ -5698,6 +5793,7 @@ class DiscordAdapter(DiscordMediaMixin, DiscordThreadTitlesMixin, DiscordVoiceIn
     ) -> SendResult:
         """Shared tail for interactive prompts: resolve target channel, call ``build(channel) ->
         (send_kwargs, view)``, send, remember the message on the view. ``fail_log`` labels failures."""
+        chat_id, _reply_to, metadata = self._route_assistant_output(chat_id, None, metadata)
         if not self._client or not DISCORD_AVAILABLE:
             return SendResult(success=False, error="Not connected")
         try:
@@ -6217,6 +6313,9 @@ class DiscordAdapter(DiscordMediaMixin, DiscordThreadTitlesMixin, DiscordVoiceIn
             skip_thread = bool(channel_keys & no_thread_channels) or (
                 is_free_channel and not self._discord_free_response_auto_thread()
             )
+            policy = self._assistant_monitor.policy
+            if policy.input_channel_id and policy.output_channel_id:
+                skip_thread = True
             auto_thread = self._extra_or_env_flag("auto_thread", "DISCORD_AUTO_THREAD", "true", truthy=True)
             is_reply_message = getattr(message, "type", None) == discord.MessageType.reply
             if auto_thread and not skip_thread and not is_voice_linked_channel and not is_reply_message:
@@ -6319,6 +6418,13 @@ class DiscordAdapter(DiscordMediaMixin, DiscordThreadTitlesMixin, DiscordVoiceIn
                 )
                 if _backfill_text:
                     _channel_context = _backfill_text
+        monitor = getattr(self, "_assistant_monitor", None)
+        if monitor and str(getattr(message.channel, "id", "")) == monitor.policy.input_channel_id:
+            supplementary = monitor.context_for_input(str(message.channel.id))
+            if supplementary:
+                _channel_context = "\n\n".join(
+                    part for part in (_channel_context, supplementary) if part
+                )
         # Keep empty user messages out of the session; with channel_context a bare mention = "catch me up".
         if (not event_text or not event_text.strip()) and not _channel_context:
             # Bare mention-only ping with no media/text/backfill: drop rather than spawn an empty turn.
@@ -6335,6 +6441,14 @@ class DiscordAdapter(DiscordMediaMixin, DiscordThreadTitlesMixin, DiscordVoiceIn
         _chan_id = str(getattr(_chan, "id", ""))
         _skills = self._resolve_channel_skills(_chan_id, _parent_id or None)
         _channel_prompt = self._resolve_channel_prompt(_chan_id, _parent_id or None)
+        monitor = getattr(self, "_assistant_monitor", None)
+        if monitor and _chan_id == monitor.policy.input_channel_id and monitor.policy.output_channel_id:
+            routing_prompt = (
+                f"This is a direct request from Discord channel <#{monitor.policy.input_channel_id}>. "
+                f"Assistant replies are delivered to <#{monitor.policy.output_channel_id}>. "
+                "Use supplementary Discord channel history only when it is relevant to the request."
+            )
+            _channel_prompt = "\n\n".join(part for part in (_channel_prompt, routing_prompt) if part)
         reply_to_id = None
         reply_to_text = None
         if message.reference:
@@ -7166,6 +7280,14 @@ async def _standalone_send(
         import aiohttp
     except ImportError:
         return send_error("aiohttp not installed. Run: pip install aiohttp")
+    extra = getattr(pconfig, "extra", {}) or {}
+    policy = DiscordAssistantChannelPolicy(
+        input_channel_id=extra.get("assistant_input_channel", ""),
+        context_channel_ids=(), output_channel_id=extra.get("assistant_output_channel", ""),
+    )
+    if policy.input_channel_id and policy.output_channel_id:
+        chat_id = policy.output_target(chat_id)
+        thread_id = None
     token = (getattr(pconfig, "token", None) or "").strip()
     if not token:
         # Profile-scoped read: under multiplex the env may hold another profile's token.
@@ -7187,6 +7309,8 @@ async def _standalone_send(
         else:
             # Forum channels (type 15) reject POST /messages — create a thread post.
             if await _standalone_is_forum(aiohttp, chat_id, json_headers, _sess_kw, _req_kw):
+                if policy.input_channel_id and policy.output_channel_id:
+                    return send_error("Assistant output channel must support direct messages, not forum posts.")
                 thread_name = _derive_forum_thread_name(message)
                 thread_url = f"https://discord.com/api/v10/channels/{chat_id}/threads"
                 # Filter readable media first to pick JSON vs multipart before opening a session.

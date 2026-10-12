@@ -131,6 +131,153 @@ def adapter(monkeypatch):
     return adapter
 
 
+def test_assistant_channel_policy_is_loaded_and_routes_output(monkeypatch):
+    monkeypatch.setattr(discord_platform.discord, "DMChannel", FakeDMChannel, raising=False)
+    monkeypatch.setattr(discord_platform.discord, "Thread", FakeThread, raising=False)
+    config = PlatformConfig(enabled=True, token="fake-token", extra={
+        "assistant_input_channel": "input-1",
+        "assistant_context_channels": "context-1,output-1",
+        "assistant_output_channel": "output-1",
+    })
+
+    routed = DiscordAdapter(config)
+
+    assert routed._assistant_monitor.output_target("input-1") == "output-1"
+    assert routed._assistant_monitor.policy.classify("context-1") == "context"
+    assert "input-1" in routed._discord_free_response_channels()
+
+
+@pytest.mark.asyncio
+async def test_assistant_context_channel_is_captured_without_dispatch(monkeypatch):
+    monkeypatch.setattr(discord_platform.discord, "DMChannel", FakeDMChannel, raising=False)
+    config = PlatformConfig(enabled=True, token="fake-token", extra={
+        "assistant_input_channel": "input-1",
+        "assistant_context_channels": "20,30",
+        "assistant_output_channel": "output-1",
+    })
+    routed = DiscordAdapter(config)
+    routed._client = SimpleNamespace(user=SimpleNamespace(id=999))
+    routed._ready_event.set()
+    routed._discord_message_admission = MagicMock(return_value=(True, False))
+    routed._handle_message = AsyncMock(return_value=True)
+    message = SimpleNamespace(
+        id=123, content="meeting moved", attachments=[], created_at=datetime.now(UTC),
+        guild=SimpleNamespace(id=10), channel=SimpleNamespace(id=20, name="general"),
+        author=SimpleNamespace(id=42, display_name="A", name="A", bot=False),
+    )
+
+    result = await routed._dispatch_discord_message(message)
+
+    assert result is True
+    routed._discord_message_admission.assert_not_called()
+    routed._handle_message.assert_not_awaited()
+    assert "meeting moved" in routed._assistant_monitor.context_for_input("input-1")
+
+
+@pytest.mark.asyncio
+async def test_direct_input_injects_context_and_needs_no_mention(monkeypatch):
+    monkeypatch.setattr(discord_platform.discord, "DMChannel", FakeDMChannel, raising=False)
+    monkeypatch.setattr(discord_platform.discord, "Thread", FakeThread, raising=False)
+    config = PlatformConfig(enabled=True, token="fake-token", extra={
+        "assistant_input_channel": "100",
+        "assistant_context_channels": "20,30",
+        "assistant_output_channel": "300",
+    })
+    routed = DiscordAdapter(config)
+    routed._client = SimpleNamespace(user=SimpleNamespace(id=999))
+    routed._text_batch_delay_seconds = 0
+    routed.handle_message = AsyncMock()
+    routed._assistant_monitor.observe(
+        channel_id="20", channel_name="#general", author_id="42", own_bot_id="999",
+        author_name="A", text="meeting moved", timestamp="t1",
+    )
+    message = make_message(channel=FakeTextChannel(channel_id=100, name="bot-input"), content="schedule it")
+
+    accepted = await routed._handle_message(message)
+
+    assert accepted is True
+    event = routed.handle_message.await_args.args[0]
+    assert event.text == "schedule it"
+    assert "meeting moved" in event.channel_context
+    assert "300" in event.channel_prompt
+
+
+@pytest.mark.asyncio
+async def test_send_routes_direct_input_response_to_output_channel(monkeypatch):
+    monkeypatch.setattr(discord_platform.discord, "ForumChannel", FakeForumChannel, raising=False)
+    config = PlatformConfig(enabled=True, token="fake-token", extra={
+        "assistant_input_channel": "input-1",
+        "assistant_context_channels": "context-1",
+        "assistant_output_channel": "output-1",
+    })
+    routed = DiscordAdapter(config)
+    routed._client = object()
+    channel = SimpleNamespace(send=AsyncMock(return_value=SimpleNamespace(id=555)))
+    routed._resolve_channel = AsyncMock(return_value=channel)
+    routed._record_response_async = AsyncMock(return_value=None)
+
+    await routed.send("input-1", "answer", reply_to="source-message", metadata={"thread_id": "source-thread"})
+
+    routed._resolve_channel.assert_awaited_once_with("output-1")
+    assert channel.send.await_args.kwargs["reference"] is None
+
+
+@pytest.mark.asyncio
+async def test_edit_routes_streaming_update_to_output_channel(monkeypatch):
+    monkeypatch.setattr(discord_platform.discord, "ForumChannel", FakeForumChannel, raising=False)
+    config = PlatformConfig(enabled=True, token="fake-token", extra={
+        "assistant_input_channel": "input-1",
+        "assistant_context_channels": "context-1",
+        "assistant_output_channel": "output-1",
+    })
+    routed = DiscordAdapter(config)
+    routed._client = object()
+    message = SimpleNamespace(edit=AsyncMock())
+    channel = SimpleNamespace(get_partial_message=MagicMock(return_value=message))
+    routed._resolve_channel = AsyncMock(return_value=channel)
+
+    await routed.edit_message("input-1", "555", "stream update")
+
+    routed._resolve_channel.assert_awaited_once_with("output-1")
+
+
+@pytest.mark.asyncio
+async def test_interactive_prompt_routes_to_output_channel(monkeypatch):
+    monkeypatch.setattr(discord_platform, "DISCORD_AVAILABLE", True)
+    config = PlatformConfig(enabled=True, token="fake-token", extra={
+        "assistant_input_channel": "input-1",
+        "assistant_context_channels": "context-1",
+        "assistant_output_channel": "output-1",
+    })
+    routed = DiscordAdapter(config)
+    routed._client = object()
+    channel = SimpleNamespace(send=AsyncMock(return_value=SimpleNamespace(id=888)))
+    routed._resolve_channel = AsyncMock(return_value=channel)
+
+    await routed._send_prompt("input-1", {"thread_id": "source-thread"}, lambda _channel: ({"content": "prompt"}, None))
+
+    routed._resolve_channel.assert_awaited_once_with("output-1")
+
+
+def test_media_output_route_clears_source_thread_and_reply_anchor(monkeypatch):
+    monkeypatch.setattr(discord_platform.discord, "DMChannel", FakeDMChannel, raising=False)
+    config = PlatformConfig(enabled=True, token="fake-token", extra={
+        "assistant_input_channel": "input-1",
+        "assistant_context_channels": "context-1",
+        "assistant_output_channel": "output-1",
+    })
+    routed = DiscordAdapter(config)
+
+    target, reply_to, metadata = routed._route_assistant_output(
+        "input-1", "source-message", {"thread_id": "source-thread"},
+    )
+
+    assert target == "output-1"
+    assert reply_to is None
+    assert "thread_id" not in metadata
+    assert metadata["reply_to_message_id"] == "source-message"
+
+
 def make_message(*, channel, content: str, mentions=None, msg_type=None):
     author = SimpleNamespace(id=42, display_name="Jezza", name="Jezza")
     return SimpleNamespace(
