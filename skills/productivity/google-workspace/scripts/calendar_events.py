@@ -12,6 +12,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import google_api
 
 DEFAULT_CALENDAR = "primary"
+# Explicit legacy approximations, not modern event-label IDs or exact named colors.
+# Verified against colors.get on Theodore; Cocoa has no legacy equivalent.
+CATEGORY_COLOR_IDS = {
+    "cs3210": "9", "cs1231s": "10", "admin": "8", "research": "2",
+    "lab": "10", "social": "3", "health": "11",
+}
 
 
 def aware_datetime(value: str) -> str:
@@ -33,7 +39,7 @@ def parse_args(argv=None):
     create.add_argument("--end", required=True, type=aware_datetime)
     create.add_argument("--location")
     create.add_argument("--description")
-    create.add_argument("--color-id", help="Legacy Google Calendar color ID (social purple: 3)")
+
     update = sub.add_parser("update", aliases=["edit"], help="Patch an event by ID")
     update.add_argument("event_id")
     update.add_argument("--summary")
@@ -41,8 +47,14 @@ def parse_args(argv=None):
     update.add_argument("--end", type=aware_datetime)
     update.add_argument("--location")
     update.add_argument("--description")
-    update.add_argument("--color-id", help="Legacy Google Calendar color ID (social purple: 3)")
-    return parser.parse_args(argv)
+    for command in (create, update):
+        color = command.add_mutually_exclusive_group()
+        color.add_argument("--color-id", help="Explicit legacy color ID; use instead of --category to override its mapping")
+        color.add_argument("--category", choices=CATEGORY_COLOR_IDS, help="Explicit semantic category; uses a legacy approximation, never title inference")
+    args = parser.parse_args(argv)
+    if args.category is not None:
+        args.color_id = CATEGORY_COLOR_IDS[args.category]
+    return args
 
 
 def build_service():

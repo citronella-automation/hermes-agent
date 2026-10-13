@@ -209,33 +209,41 @@ $GAPI gmail modify MESSAGE_ID --remove-labels UNREAD
 
 ### Calendar
 
-Create or edit events with `~/scripts/calendar/events` (Hermes-managed OAuth; no delete, recurrence, invitees, or eventLabelId):
+Create/update only on primary (`Theodore`) with `~/scripts/calendar/events` (launcher runs the repository utility under Hermes-managed OAuth). No guests, invitations, delete, recurrence, or eventLabelId writes.
 
 ```bash
-~/scripts/calendar/events create --summary "Coffee" --start 2026-10-14T09:00:00+08:00 --end 2026-10-14T10:00:00+08:00 --color-id 3
+~/scripts/calendar/events create --summary "Coffee" --start 2026-10-14T09:00:00+08:00 --end 2026-10-14T10:00:00+08:00 --category social
+~/scripts/calendar/events update EVENT_ID --category social
 ~/scripts/calendar/events update EVENT_ID --summary "Coffee with Sam"
+~/scripts/calendar/events update EVENT_ID --color-id 11
 ```
 
-Uses the primary calendar (`primary`, displayed as `Theodore`). Datetimes must be timezone-aware ISO 8601; use `+08:00` for Singapore time. Update patches only explicitly supplied fields. Supported fields: summary, start, end, location, description, and legacy `colorId` (`3` is social purple). The utility reads the event back after each write.
+Times must be timezone-aware ISO 8601; default interpretation is Asia/Singapore (`+08:00`). Update (alias `edit`) patches only explicitly supplied fields and reads the event back. Supported fields: summary, start, end, location, description, color. Without either color option, create leaves the calendar default and update preserves existing color, even when the title changes.
+
+The agent selects an explicit `--category` from clear user intent; the utility never infers categories from title keywords. `--category` and `--color-id` are mutually exclusive: to override a category mapping, omit `--category` and supply `--color-id` instead. Unknown categories are rejected.
+
+Read-only `colors.get` and primary calendar metadata verified the palette on 2026-10-13. Named modern labels and legacy write colors are different palettes. These are deterministic **legacy approximations**, not exact named-label writes:
+
+| Category | Preferred modern label | Legacy colorId | Actual legacy hex |
+|---|---|---|---|
+| `cs3210` | Cobalt (fixed course) | `9` | `#5484ed` |
+| `cs1231s` | Pistachio | `10` | `#51b749` |
+| `admin` | Birch | `8` | `#e1e1e1` |
+| `research` | Eucalyptus | `2` | `#7ae7bf` |
+| `lab` | green | `10` | `#51b749` |
+| `social` | Grape/purple | `3` | `#dbadff` |
+| `health` | red | `11` | `#dc2127` |
+
+Extracurricular prefers Cocoa (`#795548`) in modern metadata, but there is no legacy brown/Cocoa event color. `--category extracurricular` is deliberately unsupported: leave the default/preserve existing color or ask for an explicit supported legacy alternative. Do not invent a Cocoa ID or silently substitute another color. This API path previously did not preserve `eventLabelId` writes; use legacy `colorId` for writes. For reads use `calendar_day.py`, resolve modern labels first and legacy palette second; do not call legacy purple the exact modern Grape hex (`#8e24aa`). Omit color meanings in routine listings unless asked.
 
 ```bash
-# List events (defaults to next 7 days)
+GAPI="python ${HERMES_HOME:-$HOME/.hermes}/skills/productivity/google-workspace/scripts/google_api.py"
 $GAPI calendar list
-$GAPI calendar list --start 2026-03-01T00:00:00Z --end 2026-03-07T23:59:59Z
-
-# Fetch one local date from the primary calendar (Theodore for this user).
-# Defaults to Asia/Singapore; override with any IANA timezone when needed.
-$HERMES_PYTHON ${HERMES_HOME:-$HOME/.hermes}/skills/productivity/google-workspace/scripts/calendar_day.py 2026-10-12
-$HERMES_PYTHON ${HERMES_HOME:-$HOME/.hermes}/skills/productivity/google-workspace/scripts/calendar_day.py 2026-10-12 --timezone UTC
-
-# Create event (ISO 8601 with timezone required)
-$GAPI calendar create --summary "Team Standup" --start 2026-03-01T10:00:00-06:00 --end 2026-03-01T10:30:00-06:00
-$GAPI calendar create --summary "Lunch" --start 2026-03-01T12:00:00Z --end 2026-03-01T13:00:00Z --location "Cafe"
-$GAPI calendar create --summary "Review" --start 2026-03-01T14:00:00Z --end 2026-03-01T15:00:00Z --attendees "alice@co.com,bob@co.com"
-
-# Delete event
-$GAPI calendar delete EVENT_ID
+$HERMES_PYTHON ${HERMES_HOME:-$HOME/.hermes}/skills/productivity/google-workspace/scripts/calendar_day.py YYYY-MM-DD
+$HERMES_PYTHON ${HERMES_HOME:-$HOME/.hermes}/skills/productivity/google-workspace/scripts/calendar_day.py YYYY-MM-DD --timezone IANA_ZONE
 ```
+
+Search only primary `Theodore` unless explicitly asked otherwise. Date reads default to Asia/Singapore; `calendar_day.py` handles local-day intervals and pagination.
 
 ### Drive
 
