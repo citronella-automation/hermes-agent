@@ -68,3 +68,18 @@ Actions and verification:
 
 - Commit `89fdc375f1f77e1c5811003d1d5c2bd45a2362a8` (`feat(calendar): add date-scoped primary calendar utility`) was pushed to `origin/nella-custom`.
 - The commit includes the utility, 24-color label map, tests, skill usage documentation, and the preceding changelog entry. Active installed script and docs match the tracked versions.
+
+2026-10-13 12:21:15 UTC — Fixed Discord read-only utility launcher and hardened cache
+
+Actions:
+- Changed `tools/discord_readonly.py` to use the repository's supported `scripts/run-in-hermes-env` launcher. It resolves the symlink to canonical source first, so direct execution at `~/scripts/discord/discord_readonly.py` uses the Hermes-managed interpreter instead of system Python.
+- Scoped the persistent channel inventory to the active Hermes profile under `get_hermes_home()/cache/discord_readonly/channels.json`. Both in-memory and on-disk cache keys include a token hash, not the token itself. Cache writes use atomic replacement and owner-only file/directory permissions; secret scope is reset after CLI execution.
+- Removed the unnecessary ISO timestamp rewrite flagged by Ruff and updated the utility documentation.
+
+Verification:
+- `scripts/run_tests.sh tests/tools/test_discord_readonly.py -q` — 8 passed, 0 failed.
+- Ruff and `git diff --check` passed.
+- `~/scripts/discord/discord_readonly.py --help` ran successfully through the Hermes-managed environment.
+- Live read-only CLI returned 10 accessible text channels; a 24-hour fetch from `#disorganized-todo` returned 7 messages. Output verification printed only channel names/count and message count; no Discord writes or messages were sent.
+- The optional `cua-driver` setup warning remains due to missing system library `libXi.so.6`; it is unrelated to this utility.
+- The home script path is a symlink to the tracked source. No credentials or message contents were written to the cache or changelog.
