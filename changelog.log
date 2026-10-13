@@ -98,3 +98,17 @@ Verification:
 - No live Calendar writes were performed. The optional `cua-driver` remained unavailable because `libXi.so.6` is missing; this did not affect verification.
 - Independent review passed with no security concerns or logic errors; optional suggestions were not needed for the scoped utility.
 - The repository pre-commit hook could not run Ruff because `ruff` is unavailable in the Hermes environment; focused tests, compilation, diff checks, and independent review passed.
+2026-10-13 16:22 UTC — Modern Calendar event labels with authorized legacy fallback
+
+Actions:
+- Updated skills/productivity/google-workspace/scripts/calendar_events.py: resolve exact optional label names/IDs from primary metadata; append eventLabelVersion=1 to authenticated SDK requests for modern insert/patch/readback, and verify returned eventLabelId. Explicit selectors are mutually exclusive; unspecified updates preserve color/labels.
+- Category preferences: Cobalt, Pistachio, Birch, Eucalyptus, unresolved lab green, Grape, provisional Tomato/red, Cocoa. Missing/unresolved category labels report user-authorized legacy fallback (9,10,8,2,10,3,11 respectively); Cocoa has none. Legacy requests omit eventLabelVersion; duplicate names fail, network/auth errors propagate.
+- Updated tracked Google Workspace SKILL.md and added references/calendar-colors.md; refreshed both active-profile copies outside Git. Inspected personal-assistant-workflow color cues and left its scheduling semantics unchanged.
+- Added focused regression tests for exact modern resolution, Cocoa, missing/null/ambiguous labels, legacy fallback/query isolation, selector conflicts, serialization/readback, and propagation of metadata failures.
+
+Verification and limitations:
+- OAuth check authenticated. Live GET calendars.get(primary) returned Theodore with 24 labels and zero names. Exact semantic modern mapping remains unverified; no hex/name inference was made. Seven legacy-capable categories currently fall back and extracurricular errors without confirmed ID/name.
+- Private metadata evidence is intentionally outside Git at /home/citronella/.hermes/cache/scratch/theodore-event-labels-2026-10-13.json. Official labels guide fetched/read; modern SDK body serialization and URI flag checked without executing a write request.
+- Modern-label regression and null-metadata regressions demonstrated RED then GREEN. Focused Calendar/Workspace suite: 85 passed. Launcher update --help and git diff --check passed.
+- Normal pre-commit initially blocked on pre-existing FURB162 in timezone parsing (confirmed against HEAD); suppressed only that warning inline to preserve existing normalization without runtime changes. Ruff then passed. Optional cua-driver bootstrap warns of absent libXi.so.6, unrelated to this task, not repaired.
+- No event writes, label edits, invitations, guests, deletions or schedule changes. Unrelated dirty Discord work intentionally preserved and excluded from this commit. Credentials/tokens remain private and are not logged.

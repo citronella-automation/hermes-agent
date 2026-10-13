@@ -209,41 +209,39 @@ $GAPI gmail modify MESSAGE_ID --remove-labels UNREAD
 
 ### Calendar
 
-Create/update only on primary (`Theodore`) with `~/scripts/calendar/events` (launcher runs the repository utility under Hermes-managed OAuth). No guests, invitations, delete, recurrence, or eventLabelId writes.
+Create/update only on primary (`Theodore`) with `~/scripts/calendar/events` (Hermes-managed OAuth). No guests, invitations, deletes or recurrence. Only mutate events with explicit authorization; this mapping verification made GET requests only.
 
 ```bash
-~/scripts/calendar/events create --summary "Coffee" --start 2026-10-14T09:00:00+08:00 --end 2026-10-14T10:00:00+08:00 --category social
 ~/scripts/calendar/events update EVENT_ID --category social
-~/scripts/calendar/events update EVENT_ID --summary "Coffee with Sam"
+~/scripts/calendar/events update EVENT_ID --label-name Grape
+~/scripts/calendar/events update EVENT_ID --event-label-id VERIFIED_EXISTING_ID
 ~/scripts/calendar/events update EVENT_ID --color-id 11
 ```
 
-Times must be timezone-aware ISO 8601; default interpretation is Asia/Singapore (`+08:00`). Update (alias `edit`) patches only explicitly supplied fields and reads the event back. Supported fields: summary, start, end, location, description, color. Without either color option, create leaves the calendar default and update preserves existing color, even when the title changes.
+Times require timezone-aware ISO 8601; use Asia/Singapore (+08:00) by default. `update`/`edit` patches only supplied fields. Without a color selector, create uses the calendar default and update preserves existing color/label, including when renaming. Categories are explicit, never inferred from titles.
 
-The agent selects an explicit `--category` from clear user intent; the utility never infers categories from title keywords. `--category` and `--color-id` are mutually exclusive: to override a category mapping, omit `--category` and supply `--color-id` instead. Unknown categories are rejected.
+`--category`, `--label-name`, `--event-label-id` and legacy `--color-id` are mutually exclusive. Resolve exact case-sensitive label names or IDs against `calendars.get(primary).labelProperties.eventLabels`; never use nearest-hex matching. Modern insert/patch and readback use `eventLabelVersion=1`, with `eventLabelId` verified against the readback. The bundled discovery omits the parameter, so the utility appends it to the authenticated SDK HttpRequest URI; SDK serialization/auth/error handling stay intact. No label definitions are created or edited.
 
-Read-only `colors.get` and primary calendar metadata verified the palette on 2026-10-13. Named modern labels and legacy write colors are different palettes. These are deterministic **legacy approximations**, not exact named-label writes:
+| Category | Preferred exact label | Authorized legacy fallback colorId |
+|---|---|---|
+| `cs3210` | Cobalt | `9` |
+| `cs1231s` | Pistachio | `10` |
+| `admin` | Birch | `8` |
+| `research` | Eucalyptus | `2` |
+| `lab` | unresolved green convention | `10` |
+| `social` | Grape | `3` |
+| `health` | Tomato (red convention; not live-name verified) | `11` |
+| `extracurricular` | Cocoa | none: clear error if unresolved |
 
-| Category | Preferred modern label | Legacy colorId | Actual legacy hex |
-|---|---|---|---|
-| `cs3210` | Cobalt (fixed course) | `9` | `#5484ed` |
-| `cs1231s` | Pistachio | `10` | `#51b749` |
-| `admin` | Birch | `8` | `#e1e1e1` |
-| `research` | Eucalyptus | `2` | `#7ae7bf` |
-| `lab` | green | `10` | `#51b749` |
-| `social` | Grape/purple | `3` | `#dbadff` |
-| `health` | red | `11` | `#dc2127` |
+User-authorized fallback is used only when category label metadata is missing/unresolved. It is explicitly reported in JSON `colorFallback`/`colorId`; fallback and explicit legacy requests omit `eventLabelVersion=1` because Google ignores `colorId` with that parameter. Duplicate exact names fail as ambiguous. Explicit name/ID misses fail without fallback. Authentication/network/API failures propagate; they are not treated as missing labels. Cocoa has no legacy equivalent. Use a verified existing ID to select an unnamed modern label; do not guess a label name from hex.
 
-Extracurricular prefers Cocoa (`#795548`) in modern metadata, but there is no legacy brown/Cocoa event color. `--category extracurricular` is deliberately unsupported: leave the default/preserve existing color or ask for an explicit supported legacy alternative. Do not invent a Cocoa ID or silently substitute another color. This API path previously did not preserve `eventLabelId` writes; use legacy `colorId` for writes. For reads use `calendar_day.py`, resolve modern labels first and legacy palette second; do not call legacy purple the exact modern Grape hex (`#8e24aa`). Omit color meanings in routine listings unless asked.
+Read-only verification on 2026-10-13 found 24 Theodore labels with IDs and backgroundColor but **no name fields**. Therefore semantic modern-name mapping remains unverified: current category requests report fallback for the seven supported legacy categories and Cocoa errors until its exact ID/name convention is confirmed. Lab green is ambiguous; do not choose Pistachio/Sage/Basil arbitrarily. Private exact ID/hex evidence is outside Git at `~/.hermes/cache/scratch/theodore-event-labels-2026-10-13.json` (scratch may be pruned; repeat GET as needed). See `references/calendar-colors.md`.
+
+For reads use `calendar_day.py`; search only primary Theodore unless explicitly asked otherwise. Date reads default to Asia/Singapore and handle local-day intervals/pagination. Omit color meanings in routine listings unless asked.
 
 ```bash
-GAPI="python ${HERMES_HOME:-$HOME/.hermes}/skills/productivity/google-workspace/scripts/google_api.py"
-$GAPI calendar list
 $HERMES_PYTHON ${HERMES_HOME:-$HOME/.hermes}/skills/productivity/google-workspace/scripts/calendar_day.py YYYY-MM-DD
-$HERMES_PYTHON ${HERMES_HOME:-$HOME/.hermes}/skills/productivity/google-workspace/scripts/calendar_day.py YYYY-MM-DD --timezone IANA_ZONE
 ```
-
-Search only primary `Theodore` unless explicitly asked otherwise. Date reads default to Asia/Singapore; `calendar_day.py` handles local-day intervals and pagination.
 
 ### Drive
 
