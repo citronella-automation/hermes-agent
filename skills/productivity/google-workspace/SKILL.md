@@ -209,6 +209,15 @@ $GAPI gmail modify MESSAGE_ID --remove-labels UNREAD
 
 ### Calendar
 
+Create or edit events with `~/scripts/calendar/events` (Hermes-managed OAuth; no delete, recurrence, invitees, or eventLabelId):
+
+```bash
+~/scripts/calendar/events create --summary "Coffee" --start 2026-10-14T09:00:00+08:00 --end 2026-10-14T10:00:00+08:00 --color-id 3
+~/scripts/calendar/events update EVENT_ID --summary "Coffee with Sam"
+```
+
+Uses the primary calendar (`primary`, displayed as `Theodore`). Datetimes must be timezone-aware ISO 8601; use `+08:00` for Singapore time. Update patches only explicitly supplied fields. Supported fields: summary, start, end, location, description, and legacy `colorId` (`3` is social purple). The utility reads the event back after each write.
+
 ```bash
 # List events (defaults to next 7 days)
 $GAPI calendar list

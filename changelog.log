@@ -83,3 +83,18 @@ Verification:
 - Live read-only CLI returned 10 accessible text channels; a 24-hour fetch from `#disorganized-todo` returned 7 messages. Output verification printed only channel names/count and message count; no Discord writes or messages were sent.
 - The optional `cua-driver` setup warning remains due to missing system library `libXi.so.6`; it is unrelated to this utility.
 - The home script path is a symlink to the tracked source. No credentials or message contents were written to the cache or changelog.
+
+2026-10-13 14:50:48 UTC — Add primary Calendar event create/update utility
+
+Actions:
+- Added `skills/productivity/google-workspace/scripts/calendar_events.py` for event creation and patch-by-ID updates only; no delete, recurrence, invitees, or unsupported `eventLabelId` writes.
+- Added the executable launcher `/home/citronella/scripts/calendar/events`, which runs through the Hermes-managed environment.
+- The utility uses Calendar ID `primary` (displayed as `Theodore`), requires timezone-aware ISO 8601 timestamps, supports optional location/description/legacy `colorId`, and reads the target event back after each write.
+- Added mocked Calendar API tests and documented launcher usage in the Google Workspace skill.
+
+Verification:
+- TDD red: the new assertions failed while the code still used display name `Theodore` as the API calendar ID. Green: `scripts/run_tests.sh tests/skills/test_calendar_event_utility.py -q` — 3 passed, 0 failed.
+- `python -m compileall -q skills/productivity/google-workspace/scripts/calendar_events.py`, `git diff --check`, and `env -u HERMES_PYTHON /home/citronella/scripts/calendar/events --help` passed.
+- No live Calendar writes were performed. The optional `cua-driver` remained unavailable because `libXi.so.6` is missing; this did not affect verification.
+- Independent review passed with no security concerns or logic errors; optional suggestions were not needed for the scoped utility.
+- The repository pre-commit hook could not run Ruff because `ruff` is unavailable in the Hermes environment; focused tests, compilation, diff checks, and independent review passed.
