@@ -9,6 +9,7 @@ No cross-process coordination or exactly-once effects are promised.
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import time
@@ -33,6 +34,30 @@ _SEEN_CAP = 4096
 # which Telegram may restart update IDs at a random value, so a set lookup stays safe
 # where a persisted numeric high-watermark would not.
 RECEIPT_TTL_SECONDS = 24 * 60 * 60
+
+
+def trace_callback_ingress(stage, update, *, generation=None, outcome="received"):
+    """Content-free callback metadata at boundaries before native handler selection."""
+    def field(obj, name):
+        return obj.get(name) if isinstance(obj, dict) else getattr(obj, name, None)
+
+    query = field(update, "callback_query")
+    if query is None:
+        return
+    message = field(query, "message")
+    sender = field(message, "from") if isinstance(message, dict) else field(message, "from_user")
+    callback_id = field(query, "id")
+    digest = hashlib.sha256(callback_id.encode()).hexdigest()[:16] if isinstance(callback_id, str) else "absent"
+    def number(value):
+        return value if type(value) is int else None
+    logger.info(
+        "[callback-ingress-v1] stage=%s generation=%s update_id=%s callback=%s "
+        "chat_id=%s message_id=%s message_bot_id=%s outcome=%s",
+        stage if stage in {"wire", "processor_wait", "processor_enter", "admission"} else "unknown",
+        number(generation), number(field(update, "update_id")), digest,
+        number(field(field(message, "chat"), "id")), number(field(message, "message_id")),
+        number(field(sender, "id")) if field(sender, "is_bot") is True else None,
+        outcome if outcome in {"received", "accepted", "seen", "inflight"} else "unknown")
 
 
 def _receipt_path(adapter, bot_id):
@@ -151,8 +176,10 @@ class PerChatUpdateProcessor(SimpleUpdateProcessor):
         self._tails[chat.id] = done
         try:
             if prev is not None:
+                trace_callback_ingress("processor_wait", update)
                 # shield: cancelling this waiter must not cancel the predecessor's tail future.
                 await asyncio.shield(prev)
+            trace_callback_ingress("processor_enter", update)
             await coroutine
         finally:
             def release(_prev=None):
@@ -285,6 +312,8 @@ class TelegramApplication(Application):
         self.adapter._updates_dispatched_total += 1
         seen = self.adapter._seen_update_ids
         pending = self.adapter._inflight_update_ids
+        outcome = "seen" if key in seen else "inflight" if key in pending else "accepted"
+        trace_callback_ingress("admission", update, generation=getattr(self.adapter, "_polling_generation", None), outcome=outcome)
         if key in seen or key in pending:
             return
         claim = _Claim(key, asyncio.current_task())

@@ -5,6 +5,8 @@ A plugin that finishes loading after an adapter connected — a tool-triggered f
 socket — used to leave its platform handlers (slash commands, button callbacks, inbound transforms)
 silently unwired until a restart. The runner subscribes to ``PluginManager.on_plugin_loaded`` per served
 profile and calls every live adapter's idempotent ``rewire_plugin_handlers()`` on the event loop.
+Forced discovery reports reloaded generations too: same-name plugins may have removed native handlers
+in their unload cleanup, so name equality is not evidence that those handlers remain installed.
 
 Scope is handlers only: a mid-run-loaded plugin's tools and system-prompt sections stay deferred to the
 next session (prompt-cache invariant; same as ``/skills install``).

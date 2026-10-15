@@ -112,3 +112,19 @@ Verification and limitations:
 - Modern-label regression and null-metadata regressions demonstrated RED then GREEN. Focused Calendar/Workspace suite: 85 passed. Launcher update --help and git diff --check passed.
 - Normal pre-commit initially blocked on pre-existing FURB162 in timezone parsing (confirmed against HEAD); suppressed only that warning inline to preserve existing normalization without runtime changes. Ruff then passed. Optional cua-driver bootstrap warns of absent libXi.so.6, unrelated to this task, not repaired.
 - No event writes, label edits, invitations, guests, deletions or schedule changes. Unrelated dirty Discord work intentionally preserved and excluded from this commit. Credentials/tokens remain private and are not logged.
+
+2026-10-15 03:34 UTC — Restore native callbacks after same-name plugin reload
+
+Actions:
+- Fixed hermes_cli/plugins.py forced discovery to announce all newly loaded generations, not only previously absent names. Unload cleanup removes live native callbacks; suppressing the load event for the same names stranded them until restart.
+- Updated lifecycle documentation and notification tests. Added an offline real-PTB regression that dispatches a callback, forces discovery on a worker thread, then dispatches another callback through the same Application and installed adapter hoist.
+- Added content-free Telegram wire, per-chat processor, and pre-admission logs. They contain fixed stages/outcomes, trusted numeric identities and hashed callback IDs, never callback payloads, task bodies or tokens.
+- Installed directly in the active source checkout. Restarted the authorized gateway, verified Telegram getUpdates health, and verified a subsequent real same-name reload re-registered all five private native plugins.
+- Set platforms.telegram.extra.drop_pending_on_cold_boot=false through Hermes CLI before restarting to preserve pending updates. Private runtime config, delivery/admission ledgers and credentials remain outside Git; no ledger resets, offset skips, second getUpdates poller or synthetic messages.
+
+Verification and publication:
+- Regression RED: callback executed before forced reload but not afterward. GREEN: same test plus ingress diagnostics passed; lifecycle and TUI activation tests passed independently.
+- Adjacent admission suite: 93 passed, one cancellation-before-entry failure and one warning. The failure was reproduced using HEAD's original update_admission module in an isolated test process, confirming baseline behavior; not repaired in this scoped change.
+- Initial canonical wrapper selected the bare interpreter and failed imports; bootstrap-backed per-file runs exercised the actual runtime dependencies. Ruff and diff checks recorded separately.
+- A new real user tap is still required for live end-to-end action verification. Historical admission timestamps alone do not identify their update kinds.
+- The configured Hermes origin is public. Do not push this private local change there; retain the local commit and publish its patch/evidence only in the private assistant-workspace repository. Unrelated dirty Discord files are excluded.

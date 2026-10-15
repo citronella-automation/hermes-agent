@@ -1289,9 +1289,11 @@ class PluginManager(PluginLoaderMixin, PluginDispatchMixin, PluginLedgerMixin):
         with self._discovery_lock, _plugin_home_scope(self.home_path):
             if self._discovered and not force:
                 return
-            # ``on_plugin_loaded`` reports the plugins this sweep loads that the process did not have before
-            # (boot: everything; a mid-run install/enable: just the newcomer), keyed on the pre-sweep set.
-            loaded_before = frozenset(k for k, p in self._plugins.items() if not p.error and not p.deferred)
+            # A forced sweep unloads registrations, even when every plugin name stays the
+            # same. Its newly loaded generations must notify live adapters to rewire.
+            # Ordinary discovery still reports only newcomers.
+            loaded_before = (frozenset() if force else frozenset(
+                k for k, p in self._plugins.items() if not p.error and not p.deferred))
             if force:
                 self.unload()  # the ledger owns teardown of process-global registries
             if env_var_enabled("HERMES_SAFE_MODE"):

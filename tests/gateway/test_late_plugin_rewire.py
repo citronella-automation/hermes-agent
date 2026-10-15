@@ -50,9 +50,12 @@ def test_on_plugin_loaded_fires_with_activation_summary_after_a_late_load():
     assert late == [{"name": "late_cmd", "key": "late_cmd",
                      "activated_now": {"gateway_commands": ["late"], "callbacks": ["telegram"]},
                      "deferred": {"tools": ["late_tool"]}}]
-    assert len(events) == 1  # only the sweep that added it fires — and only for the newcomer
-    discover_plugins(force=True)  # nothing new: no event (the gateway re-wire is not spammed)
     assert len(events) == 1
+    discover_plugins()  # cached ordinary discovery does not rewire
+    assert len(events) == 1
+    discover_plugins(force=True)  # unload/reload is a new generation even for the same name
+    assert len(events) == 2
+    assert events[1] == events[0]
     unsubscribe()
 
 

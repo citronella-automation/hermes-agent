@@ -55,7 +55,10 @@ def test_plugins_manage_install_rescans_fires_on_plugin_loaded_and_exposes_mcp_s
         resp = server.handle_request({"id": "1", "method": "plugins.manage",
                                       "params": {"action": "install", "repo": "owner/late-mcp", "enable": True}})
     result = resp["result"]
-    assert [e["name"] for e in events[-1]] == ["late-mcp"]  # fired from inside the rescan, newcomer only
+    # Forced discovery unloaded existing plugin generations as well: every freshly
+    # loaded generation is announced so native cleanup has a matching rewire.
+    assert "late-mcp" in [e["name"] for e in events[-1]]
+    assert len(events) == 1
     servers = [row["name"] for row in result["activation"]["live_now"]["mcp_servers"]]
     assert servers == ["worker"]  # exactly the mcp.json name, as mcp.servers.* know it
     assert result["gateway_reloaded"] is False and result["restart_required"] is True

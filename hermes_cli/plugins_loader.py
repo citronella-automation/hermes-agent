@@ -201,13 +201,11 @@ def _dist_installed(req: str) -> Optional[bool]:
 
 class PluginLoaderMixin:
     def on_plugin_loaded(self, callback: Callable[[list[dict[str, Any]]], Any]) -> Callable[[], None]:
-        """Subscribe to "a discovery sweep loaded plugins this process did not have": fires from INSIDE
+        """Subscribe to plugin generations loaded by a discovery sweep: fires from INSIDE
         :meth:`discover_and_load` (never emitted by an install RPC) with one
-        ``{name, key, activated_now, deferred}`` summary per NEWLY loaded plugin — every plugin at boot,
-        just the newcomer after a mid-run ``hermes plugins install/enable``, Desktop / dashboard /
-        ``plugins.manage`` install-enable-update, a tool-triggered force re-discovery or the gateway's
-        ``reload-plugins`` verb (all of which run ``discover_plugins(force=True)``; a non-forced call
-        short-circuits on ``_discovered`` and never fires). See
+        ``{name, key, activated_now, deferred}`` summary per loaded generation. Forced discovery
+        unloads and reloads existing names too, so it reports them again: their old registrations
+        may have been removed by unload cleanup. A cached non-forced call never fires. See
         :func:`hermes_cli.plugins_activation.plugin_activation_summary` for the payload: ``activated_now``
         (gateway commands/transforms/hooks/callbacks, live at once) vs ``deferred`` (``tools``/``prompt``
         until the next session, ``mcp_servers`` — the plugin's mcp.json server names — until ``mcp.reload``).

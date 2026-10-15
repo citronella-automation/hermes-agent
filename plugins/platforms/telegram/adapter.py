@@ -1735,6 +1735,9 @@ class TelegramAdapter(TelegramHeldInboundMixin, BasePlatformAdapter):
         accepted generation, so a late response from a fenced poll cannot inflate the backlog."""
         if isinstance(result, list) and result:
             self._updates_received_total += len(result)
+            from plugins.platforms.telegram.update_admission import trace_callback_ingress
+            for update in result:
+                trace_callback_ingress("wire", update, generation=self._polling_generation)
 
     def _instrument_polling_request(self, request):
         """Instrument one dedicated PTB getUpdates request with progress tracking.
