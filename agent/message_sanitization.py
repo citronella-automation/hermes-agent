@@ -670,6 +670,10 @@ _REASONING_CARRIER_ROUTES: tuple = (
     (frozenset({RC, RD}), frozenset({"novita", "tencent-tokenhub", "minimax", "minimax-cn"}),
      ("novita.ai", "tokenhub.tencentmaas.com", "tokenhub-intl.tencentcloudmaas.com", "minimax.io", "minimaxi.com")),
     (_LOCAL_CARRIERS, frozenset({"ollama-cloud", "custom", "lmstudio", "upstage"}), ("ollama.com", "upstage.ai")),
+    # NUS SoC LAAS: a strict Rust/Serde deserializer that hard-400s on any duplicate reasoning key
+    # ("duplicate field `reasoning`") because the bare ``reasoning`` alias duplicates the
+    # ``reasoning_content`` string it already reads. reasoning_content only.
+    (_DEFAULT_CARRIERS, frozenset(), ("soclaas-api.comp.nus.edu.sg",)),
 )
 
 
@@ -708,15 +712,31 @@ def needs_reasoning_echo(provider: Any, model: Any, base_url: Any) -> bool:
 
 
 def route_reasoning_carriers(provider: Any, base_url: Any) -> frozenset:
-    """Reasoning carriers the chat-completions route reads (before any runtime rejection)."""
+    """Reasoning carriers the chat-completions route reads (before any runtime rejection).
+
+    Host evidence outranks provider-id evidence: several generic provider ids (``custom``,
+    ``lmstudio``, ``upstage``) are catch-all buckets any user-defined endpoint lands in, so a
+    row naming the actual host is the more specific fact. Matching both in one first-wins pass
+    let ``custom`` shadow the host row for every user-registered endpoint.
+    """
     from utils import base_url_host_matches
 
+    def _host_carriers() -> frozenset | None:
+        for carriers, _providers, hosts in _REASONING_CARRIER_ROUTES:
+            if any(base_url_host_matches(base_url, h) for h in hosts):
+                return carriers
+        return None
+
+    def _provider_carriers() -> frozenset | None:
+        for carriers, providers, _hosts in _REASONING_CARRIER_ROUTES:
+            if provider_lower in providers:
+                return carriers
+        return None
+
     provider_lower = (provider or "").strip().lower()
-    carriers = next(
-        (c for c, providers, hosts in _REASONING_CARRIER_ROUTES
-         if provider_lower in providers or any(base_url_host_matches(base_url, h) for h in hosts)),
-        None,
-    )
+    carriers = _host_carriers()
+    if carriers is None:
+        carriers = _provider_carriers()
     if carriers is None:
         from agent.model_metadata import is_local_endpoint
 

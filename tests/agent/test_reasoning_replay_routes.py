@@ -47,6 +47,10 @@ def _wire(provider, base_url, model="m", rejected=()):
     # everyone else: the de-facto standard alias
     ("zai", "https://api.z.ai/api/paas/v4", "glm-5.3", {"reasoning_content"}),
     ("openai-api", "https://api.openai.com/v1", "gpt-5", {"reasoning_content"}),
+    # NUS SoC LAAS: a strict Serde schema 400s on the duplicate bare ``reasoning`` alias, so the
+    # route keeps reasoning_content alone (matched by host; the provider id is user-defined).
+    ("custom", "https://soclaas-api.comp.nus.edu.sg/v1", "x-test-2", {"reasoning_content"}),
+    ("custom", "https://SocLAAS-API.comp.nus.edu.sg/v1", "x-test-2", {"reasoning_content"}),
 ])
 def test_each_route_gets_exactly_the_carriers_it_reads(provider, base_url, model, expected):
     turn, bare = _wire(provider, base_url, model)
