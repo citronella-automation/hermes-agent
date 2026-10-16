@@ -1,6 +1,12 @@
 Hermes Local Change Log
 =======================
 
+2026-10-16 UTC — Private request-only account-usage bridge
+- Added a default-profile exact-HTTPS-host bridge to the existing ProviderProfile account-usage hook. Only explicit manual usage surfaces opt in; automatic account cache/desktop polling and unrelated provider invocation signatures remain unchanged.
+- Verified private native contract4 tests and existing core usage renderer/fetch/pool/gateway/CLI34 regressions; helper12 tests and same-response formatters pass. No restart, model/default configuration, cron, global proxy or Discord owner file changes.
+- Origin is PUBLIC. Keep this scoped commit local and retain its patch/evidence in the approved private assistant workspace; do not push private route details to the public fork. Credential values and private runtime state are excluded.
+
+
 2026-10-12 12:55:32 UTC — Google Workspace OAuth service-scope selection
 
 Actions:

@@ -43,7 +43,12 @@ def cmd_usage(args: argparse.Namespace) -> int:
     provider = resolve_requested_provider(getattr(args, "provider", None))
     # No explicit key: the fetcher resolves the credential exactly as a session without a live agent
     # would (singleton store, then credential pool) — it never adopts or refreshes anything else.
-    snapshot = fetch_account_usage(provider)
+    # Only this named registration may supply a fixed budget route without a live agent.
+    # Other providers retain their existing resolution and credential paths.
+    budget_base = ("https://soclaas-api.comp.nus.edu.sg/v1"
+                   if str(provider).lower() == "soclaas-api.comp.nus.edu.sg" else None)
+    snapshot = (fetch_account_usage(provider, base_url=budget_base, on_request=True)
+                if budget_base else fetch_account_usage(provider))
     if snapshot is None:
         print(
             f"No account usage available for provider '{provider}': no credential is configured for it, "

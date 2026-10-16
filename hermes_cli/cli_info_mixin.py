@@ -784,13 +784,14 @@ class CLIInfoMixin:
         provider = self._agent_or_self("provider")
         if not provider:
             return False
-        from agent.account_usage import fetch_account_usage, render_account_usage_lines
+        from agent.account_usage import fetch_account_usage, render_account_usage_lines, soclaas_usage_request_options
         account_snapshot = None
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _pool:
             try:
                 account_snapshot = _pool.submit(
                     fetch_account_usage, provider, base_url=self._agent_or_self("base_url"),
                     api_key=self._agent_or_self("api_key"),
+                    **soclaas_usage_request_options(provider, self._agent_or_self("base_url")),
                 ).result(timeout=10.0)
             except (concurrent.futures.TimeoutError, Exception):
                 account_snapshot = None

@@ -11,7 +11,7 @@ import re
 import time
 from typing import Any
 
-from agent.account_usage import fetch_account_usage, render_account_usage_lines
+from agent.account_usage import fetch_account_usage, render_account_usage_lines, soclaas_usage_request_options
 from agent.i18n import t
 from gateway.config import Platform
 from gateway.platforms.event import MessageEvent
@@ -600,7 +600,8 @@ class GatewayStatusCommandsMixin:
         # Account usage off the event loop so slow provider APIs don't block the gateway;
         # failures are non-fatal (account_lines stays []).
         account_snapshot = provider and await _quiet(
-            lambda: asyncio.to_thread(fetch_account_usage, provider, base_url=base_url, api_key=api_key)
+            lambda: asyncio.to_thread(fetch_account_usage, provider, base_url=base_url, api_key=api_key,
+                                     **soclaas_usage_request_options(provider, base_url))
         )
         account_lines = (
             render_account_usage_lines(account_snapshot, markdown=True) if account_snapshot else []

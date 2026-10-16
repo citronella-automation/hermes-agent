@@ -728,9 +728,47 @@ def _call_plugin_usage_hook(profile, base_url: Optional[str], api_key: Optional[
     return None if bounded.timed_out else bounded.value
 
 
+def soclaas_usage_request_options(provider, base_url):
+    """Opt in only the exact approved route; leave other call signatures unchanged."""
+    from urllib.parse import urlsplit
+    if str(provider or '').lower() not in ('custom', 'soclaas-api.comp.nus.edu.sg'):
+        return {}
+    try:
+        url = urlsplit(base_url or '')
+        if (url.scheme == 'https' and url.hostname == 'soclaas-api.comp.nus.edu.sg'
+                and url.port in (None, 443) and not url.username and not url.password
+                and not url.query and not url.fragment and url.path in ('/v1', '/v1/')):
+            return {'on_request': True}
+    except (ValueError, TypeError):
+        pass
+    return {}
+
+
+def _soclaas_budget_profile(provider, base_url):
+    """Private default-profile bridge; no registration or generic custom override."""
+    if not soclaas_usage_request_options(provider, base_url):
+        return None
+    try:
+        import importlib.util
+        from pathlib import Path
+        from hermes_constants import get_hermes_home
+        home = Path.home()
+        if get_hermes_home().resolve() != (home / '.hermes').resolve():
+            return None
+        path = home / 'assistant-workspace/scripts/soclaas_usage_profile.py'
+        spec = importlib.util.spec_from_file_location('_soclaas_private_usage_profile', path)
+        if spec is None or spec.loader is None:
+            return None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.SoclaasBudgetProfile()
+    except Exception:
+        return None
+
+
 def fetch_account_usage(
     provider: Optional[str], *, base_url: Optional[str] = None, api_key: Optional[str] = None,
-    read_only: bool = False, identity_id: Optional[str] = None,
+    read_only: bool = False, identity_id: Optional[str] = None, on_request: bool = False,
 ) -> Optional[AccountUsageSnapshot]:
     from agent.account_usage_cache import remember_account_usage
 
@@ -749,7 +787,8 @@ def fetch_account_usage(
         else:
             from providers import get_provider_profile
 
-            profile = get_provider_profile(slug)
+            profile = _soclaas_budget_profile(slug, base_url) if on_request else None
+            profile = profile or get_provider_profile(slug)
             snapshot = _call_plugin_usage_hook(profile, base_url, api_key) if profile else None
     except Exception:
         return None
