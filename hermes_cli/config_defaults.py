@@ -2012,6 +2012,12 @@ DEFAULT_CONFIG = {
             # Absolute cap on the embedded listing in tokens (chars/4), regardless of context size.
             # Range 200..60000.
             "listing_max_tokens": 4000,
+            # Tool names that must stay in the model-visible array whatever their toolset
+            # (every plugin-toolset tool defers by default). A client depends on a tool every
+            # turn — e.g. the source-bound `task_add` capture — it belongs here: the catalog
+            # listing naming a deferred tool is pinned per session, so a tool registered after
+            # that pin was written never becomes visible to a long-lived session.
+            "always_direct": [],
             # Tools replaced by the bridge by default. This list intentionally includes cold,
             # event-triggered built-ins; an explicit list replaces it wholesale and [] keeps every
             # tool eager. The runtime fallback in tools/tool_search.py derives from this value.
